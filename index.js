@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 10000;
 
 let globalBrowser = null;
 let globalPage = null;
-let browserInitializing = null; // Eşzamanlı çakışmaları (ETXTBSY) önlemek için kilit
+let browserInitializing = null;
 
 // Oturumu güvenli bir şekilde başlatan ve kilitleyen fonksiyon
 async function getActivePage() {
@@ -16,7 +16,6 @@ async function getActivePage() {
         return globalPage;
     }
 
-    // Eğer tarayıcı zaten başlatılıyorsa, devam eden işlemin bitmesini bekle
     if (browserInitializing) {
         return await browserInitializing;
     }
@@ -41,7 +40,7 @@ async function getActivePage() {
             globalPage.setDefaultNavigationTimeout(60000);
             return globalPage;
         } finally {
-            browserInitializing = null; // Kilidi kaldır
+            browserInitializing = null;
         }
     })();
 
@@ -64,11 +63,29 @@ app.get('/', async (req, res) => {
                 waitUntil: 'networkidle2' 
             });
 
-            const userInput = await page.$('input[name="username"]');
-            if (userInput) {
-                await page.type('input[name="username"]', process.env.FORD_USER);
-                await page.type('input[name="password"]', process.env.FORD_PASS);
-                await page.click('#loginButton');
+            // Güvenli Giriş İşlemi (DOM hatalarını önlemek için page.evaluate içinde yapılıyor)
+            const isLoginProcessed = await page.evaluate((user, pass) => {
+                const userInput = document.querySelector('input[name="username"]');
+                const passInput = document.querySelector('input[name="password"]');
+                const loginBtn = document.querySelector('#loginButton');
+
+                if (userInput && passInput) {
+                    userInput.value = user;
+                    userInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    
+                    passInput.value = pass;
+                    passInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+                    if (loginBtn) {
+                        loginBtn.click();
+                        return true;
+                    }
+                }
+                return false;
+            }, process.env.FORD_USER, process.env.FORD_PASS);
+
+            if (isLoginProcessed) {
+                // Giriş butonuna basıldıktan sonra sayfanın yüklenmesini bekle
                 await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
             }
         }
