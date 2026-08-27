@@ -1,0 +1,13 @@
+{
+  "name": "ford-mcat-proxy",
+  "version": "1.0.0",
+  "description": "Ford Superservice Otomasyon Proxy",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "puppeteer": "^22.0.0"
+  }
+}
