@@ -61,12 +61,12 @@ app.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, 'favicon.ico'));
 });
 
-// Ana kök dizine gelindiğinde direkt Microcat uygulamasının içine yönlendir
-app.get('/', async (req, res) => {
+// Kök dizine gelenleri doğrudan Microcat kataloğuna yönlendir
+app.get('/', (req, res) => {
     res.redirect('/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E');
 });
 
-// Tüm proxy istekleri ve başlık / yönlendirme ayarları
+// Hedef sunucuyu doğrudan microcat-europe olarak ayarlayan Proxy Katmanı
 app.use('/', async (req, res, next) => {
     try {
         const cookies = await getCookies();
@@ -92,7 +92,7 @@ app.use('/', async (req, res, next) => {
                         responseBody = Buffer.concat([responseBody, chunk]);
                     };
 
-                    proxyRes.end = function (chunk) {
+'                    proxyRes.end = function (chunk) {
                         if (chunk) {
                             responseBody = Buffer.concat([responseBody, chunk]);
                         }
