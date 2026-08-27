@@ -3,14 +3,19 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-// Favicon dosyasını sunmak için
+// Render'ın portu hemen algılaması için hızlı bir health-check rotası
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+// Favicon dosyası
 app.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, 'favicon.ico'));
 });
 
-// Ana adrese ( / ) girildiğinde otomasyon çalışsın
+// Ana sayfa rotası
 app.get('/', async (req, res) => {
     let browser;
     try {
@@ -27,35 +32,30 @@ app.get('/', async (req, res) => {
 
         const page = await browser.newPage();
         
-        // 1. Ford Login sayfasına git
+        // Zaman aşımı süresini uzatıyoruz
+        page.setDefaultNavigationTimeout(60000);
+
         await page.goto('https://login.superservice.com/login/tr/?goto=https:%2F%2Flogin.superservice.com%2F', { 
-            waitUntil: 'networkidle2',
-            timeout: 60000 
+            waitUntil: 'networkidle2' 
         });
 
-        // 2. Render Environment Variables'dan bilgileri alıp doldur
         await page.waitForSelector('input[name="username"]', { visible: true });
         await page.type('input[name="username"]', process.env.FORD_USER);
         
         await page.waitForSelector('input[name="password"]', { visible: true });
         await page.type('input[name="password"]', process.env.FORD_PASS);
 
-        // 3. Giriş butonuna bas
         await page.click('#loginButton');
 
-        // 4. Giriş sonrası yönlendirmeyi bekle
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
+        await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
 
-        // 5. Sayfa içine özel favicon ve yasaklı alanları gizleyen CSS'i enjekte ediyoruz
         await page.evaluate(() => {
-            // Favicon ekleme
             let link = document.querySelector("link[rel*='icon']") || document.createElement('link');
             link.type = 'image/x-icon';
             link.rel = 'shortcut icon';
             link.href = '/favicon.ico';
             document.getElementsByTagName('head')[0].appendChild(link);
 
-            // Yasaklı alanları gizleme CSS'i
             const style = document.createElement('style');
             style.innerHTML = `
                 div.footer.ng-star-inserted,
@@ -87,6 +87,7 @@ app.get('/', async (req, res) => {
     }
 });
 
+// Sunucuyu 0.0.0.0 ve port üzerinden hemen başlatıyoruz
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Ford Proxy sunucusu ${PORT} portunda çalışıyor.`);
 });
