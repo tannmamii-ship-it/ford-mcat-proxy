@@ -1,13 +1,19 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/ford', async (req, res) => {
+// Favicon dosyasını sunmak için
+app.get('/favicon.ico', (req, res) => {
+    res.sendFile(path.join(__dirname, 'favicon.ico'));
+});
+
+// Ana adrese ( / ) girildiğinde otomasyon çalışsın
+app.get('/', async (req, res) => {
     let browser;
     try {
-        // Render üzerinde Chromium'un sorunsuz çalışması için gerekli argümanlar
         browser = await puppeteer.launch({
             headless: true,
             args: [
@@ -27,7 +33,7 @@ app.get('/ford', async (req, res) => {
             timeout: 60000 
         });
 
-        // 2. Kullanıcı adı ve şifreyi Render Environment Variables'dan güvenli bir şekilde çekiyoruz
+        // 2. Render Environment Variables'dan bilgileri alıp doldur
         await page.waitForSelector('input[name="username"]', { visible: true });
         await page.type('input[name="username"]', process.env.FORD_USER);
         
@@ -37,12 +43,19 @@ app.get('/ford', async (req, res) => {
         // 3. Giriş butonuna bas
         await page.click('#loginButton');
 
-        // 4. Giriş sonrası yönlendirmeyi ve ana sayfanın yüklenmesini bekliyoruz
+        // 4. Giriş sonrası yönlendirmeyi bekle
         await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
 
-        // Eğer açılışta ek bir butona basılması gerekiyorsa buraya eklenebilir.
-        // Katalog sayfasına ulaştıktan sonra istenmeyen elementleri temizlemek için CSS enjekte ediyoruz:
+        // 5. Sayfa içine özel favicon ve yasaklı alanları gizleyen CSS'i enjekte ediyoruz
         await page.evaluate(() => {
+            // Favicon ekleme
+            let link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+            link.type = 'image/x-icon';
+            link.rel = 'shortcut icon';
+            link.href = '/favicon.ico';
+            document.getElementsByTagName('head')[0].appendChild(link);
+
+            // Yasaklı alanları gizleme CSS'i
             const style = document.createElement('style');
             style.innerHTML = `
                 div.footer.ng-star-inserted,
@@ -62,7 +75,6 @@ app.get('/ford', async (req, res) => {
             document.head.appendChild(style);
         });
 
-        // 5. Temizlenmiş ve giriş yapılmış sayfayı müşteriye sunuyoruz
         const htmlContent = await page.content();
         await browser.close();
 
@@ -71,7 +83,7 @@ app.get('/ford', async (req, res) => {
     } catch (error) {
         if (browser) await browser.close();
         console.error(error);
-        res.status(500).send('Giriş yapılırken veya sayfa yüklenirken bir hata oluştu: ' + error.message);
+        res.status(500).send('Giriş yapılırken hata oluştu: ' + error.message);
     }
 });
 
