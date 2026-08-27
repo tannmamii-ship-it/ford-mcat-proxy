@@ -8,21 +8,44 @@ const PORT = process.env.PORT || 10000;
 
 let globalBrowser = null;
 let globalPage = null;
+let browserInitializing = null; // Eşzamanlı çakışmaları (ETXTBSY) önlemek için kilit
 
-// Oturumu başlatan ve aktif tutan ana fonksiyon
+// Oturumu güvenli bir şekilde başlatan ve kilitleyen fonksiyon
 async function getActivePage() {
-    if (!globalBrowser || !globalPage || globalBrowser.isConnected() === false) {
-        globalBrowser = await puppeteer.launch({
-            args: chromium.args,
-            defaultViewport: chromium.defaultViewport,
-            executablePath: await chromium.executablePath(),
-            headless: chromium.headless,
-            ignoreHTTPSErrors: true,
-        });
-        globalPage = await globalBrowser.newPage();
-        globalPage.setDefaultNavigationTimeout(60000);
+    if (globalBrowser && globalPage && globalBrowser.isConnected() === true) {
+        return globalPage;
     }
-    return globalPage;
+
+    // Eğer tarayıcı zaten başlatılıyorsa, devam eden işlemin bitmesini bekle
+    if (browserInitializing) {
+        return await browserInitializing;
+    }
+
+    browserInitializing = (async () => {
+        try {
+            if (globalBrowser) {
+                try { await globalBrowser.close(); } catch (e) {}
+            }
+
+            const executablePath = await chromium.executablePath();
+
+            globalBrowser = await puppeteer.launch({
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: executablePath,
+                headless: chromium.headless,
+                ignoreHTTPSErrors: true,
+            });
+
+            globalPage = await globalBrowser.newPage();
+            globalPage.setDefaultNavigationTimeout(60000);
+            return globalPage;
+        } finally {
+            browserInitializing = null; // Kilidi kaldır
+        }
+    })();
+
+    return await browserInitializing;
 }
 
 // Favicon sunucusu
@@ -41,7 +64,6 @@ app.get('/', async (req, res) => {
                 waitUntil: 'networkidle2' 
             });
 
-            // Kullanıcı adı ve şifre alanları varsa doldur
             const userInput = await page.$('input[name="username"]');
             if (userInput) {
                 await page.type('input[name="username"]', process.env.FORD_USER);
@@ -51,16 +73,13 @@ app.get('/', async (req, res) => {
             }
         }
 
-        // Sayfa içeriğini alıp linkleri ve arayüzü proxy'ye uyarlıyoruz
         const htmlContent = await page.evaluate(() => {
-            // Favicon ekleme
             let link = document.querySelector("link[rel*='icon']") || document.createElement('link');
             link.type = 'image/x-icon';
             link.rel = 'shortcut icon';
             link.href = '/favicon.ico';
             document.getElementsByTagName('head')[0].appendChild(link);
 
-            // Gereksiz/yasaklı alanları gizleme CSS'i
             const style = document.createElement('style');
             style.innerHTML = `
                 div.footer.ng-star-inserted,
@@ -79,7 +98,6 @@ app.get('/', async (req, res) => {
             `;
             document.head.appendChild(style);
 
-            // Tüm linkleri ve butonları proxy üzerinden yönlendirecek şekilde güncelliyoruz
             document.querySelectorAll('a').forEach(el => {
                 const href = el.getAttribute('href');
                 if (href && !href.startsWith('javascript') && !href.startsWith('#') && !href.startsWith('/navigate')) {
@@ -90,7 +108,7 @@ app.get('/', async (req, res) => {
                         absoluteUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1) + href;
                     }
                     el.setAttribute('href', '/navigate?url=' + encodeURIComponent(absoluteUrl));
-                    el.removeAttribute('target'); // Yeni sekmede açılmasını engeller
+                    el.removeAttribute('target');
                 }
             });
 
@@ -115,7 +133,6 @@ app.get('/navigate', async (req, res) => {
         await page.goto(targetUrl, { waitUntil: 'networkidle2' });
 
         const htmlContent = await page.evaluate(() => {
-            // Yeni açılan sayfadaki linkleri de proxy yönlendirmesine uygun hale getir
             document.querySelectorAll('a').forEach(el => {
                 const href = el.getAttribute('href');
                 if (href && !href.startsWith('javascript') && !href.startsWith('#') && !href.startsWith('/navigate')) {
