@@ -4,11 +4,11 @@
   "description": "Ford Superservice Otomasyon Proxy",
   "main": "index.js",
   "scripts": {
-    "build": "npx puppeteer browsers install chrome",
     "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "puppeteer": "^22.0.0"
+    "puppeteer-core": "^22.0.0",
+    "@sparticuz/chromium": "^122.0.0"
   }
 }
