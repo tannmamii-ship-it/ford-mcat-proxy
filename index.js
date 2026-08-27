@@ -1,38 +1,27 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Render'ın portu hemen algılaması için hızlı bir health-check rotası
-app.get('/health', (req, res) => {
-    res.status(200).send('OK');
-});
-
-// Favicon dosyası
 app.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, 'favicon.ico'));
 });
 
-// Ana sayfa rotası
 app.get('/', async (req, res) => {
-    let browser;
+    let browser = null;
     try {
         browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu'
-            ]
+            args: chromium.args,
+            defaultViewport: chromium.defaultViewport,
+            executablePath: await chromium.executablePath(),
+            headless: chromium.headless,
+            ignoreHTTPSErrors: true,
         });
 
         const page = await browser.newPage();
-        
-        // Zaman aşımı süresini uzatıyoruz
         page.setDefaultNavigationTimeout(60000);
 
         await page.goto('https://login.superservice.com/login/tr/?goto=https:%2F%2Flogin.superservice.com%2F', { 
@@ -81,13 +70,14 @@ app.get('/', async (req, res) => {
         res.send(htmlContent);
 
     } catch (error) {
-        if (browser) await browser.close();
+        if (browser !== null) {
+            await browser.close();
+        }
         console.error(error);
         res.status(500).send('Giriş yapılırken hata oluştu: ' + error.message);
     }
 });
 
-// Sunucuyu 0.0.0.0 ve port üzerinden hemen başlatıyoruz
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Ford Proxy sunucusu ${PORT} portunda çalışıyor.`);
 });
