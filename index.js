@@ -61,14 +61,19 @@ app.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, 'favicon.ico'));
 });
 
-// Proxy ve Sekme Başlığı Değiştirici Katmanı
+// Ana kök dizine gelindiğinde direkt Microcat uygulamasının içine yönlendir
+app.get('/', async (req, res) => {
+    res.redirect('/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E');
+});
+
+// Tüm proxy istekleri ve başlık / yönlendirme ayarları
 app.use('/', async (req, res, next) => {
     try {
         const cookies = await getCookies();
         const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
 
         createProxyMiddleware({
-            target: 'https://login.superservice.com',
+            target: 'https://microcat-europe.superservice.com',
             changeOrigin: true,
             secure: false,
             onProxyReq: (proxyReq) => {
@@ -79,10 +84,8 @@ app.use('/', async (req, res, next) => {
                     sessionCookies = null;
                 }
 
-                // Sadece HTML sayfalarında sekme başlığını değiştirmek için araya giriyoruz
                 const contentType = proxyRes.headers['content-type'] || '';
                 if (contentType.includes('text/html')) {
-                    let originalSend = proxyRes.write;
                     let responseBody = Buffer.from([]);
 
                     proxyRes.write = function (chunk) {
@@ -96,7 +99,7 @@ app.use('/', async (req, res, next) => {
                         
                         let bodyString = responseBody.toString('utf8');
                         
-                        // Mevcut <title> etiketini bulup "Ford Microcat" ile değiştiriyoruz
+                        // Sekme başlığını Ford Microcat yap
                         if (bodyString.includes('<title>')) {
                             bodyString = bodyString.replace(/<title>.*?<\/title>/i, '<title>Ford Microcat</title>');
                         } else {
