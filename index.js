@@ -57,37 +57,35 @@ app.get('/', async (req, res) => {
     try {
         const page = await getActivePage();
         
-        // Eğer henüz giriş yapılmadıysa giriş sayfasına git
-        if (!page.url().includes('superservice.com') || page.url().includes('login')) {
+        // Eğer henüz giriş yapılmadıysa veya login sayfasındaysak
+        if (!page.url().includes('infomedia') || page.url().includes('login')) {
             await page.goto('https://login.superservice.com/login/tr/?goto=https:%2F%2Flogin.superservice.com%2F', { 
-                waitUntil: 'networkidle2' 
+                waitUntil: 'domcontentloaded' 
             });
 
-            // Güvenli Giriş İşlemi (DOM hatalarını önlemek için page.evaluate içinde yapılıyor)
-            const isLoginProcessed = await page.evaluate((user, pass) => {
-                const userInput = document.querySelector('input[name="username"]');
-                const passInput = document.querySelector('input[name="password"]');
-                const loginBtn = document.querySelector('#loginButton');
-
-                if (userInput && passInput) {
-                    userInput.value = user;
-                    userInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    
-                    passInput.value = pass;
-                    passInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-                    if (loginBtn) {
-                        loginBtn.click();
-                        return true;
-                    }
-                }
-                return false;
-            }, process.env.FORD_USER, process.env.FORD_PASS);
-
-            if (isLoginProcessed) {
-                // Giriş butonuna basıldıktan sonra sayfanın yüklenmesini bekle
-                await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
+            // Kullanıcı adı alanının gelmesini güvenli bir şekilde bekle
+            try {
+                await page.waitForSelector('input[name="username"]', { timeout: 15000 });
+            } catch (e) {
+                // Zaten giriş yapılmışsa veya başka bir ekrandaysak devam et
             }
+
+            // Sayfa context çakışmalarını önlemek için doğrudan type ve click kullanıyoruz
+            const userInput = await page.$('input[name="username"]');
+            if (userInput) {
+                await page.type('input[name="username"]', process.env.FORD_USER, { delay: 50 });
+                await page.type('input[name="password"]', process.env.FORD_PASS, { delay: 50 });
+                
+                await Promise.all([
+                    page.click('#loginButton'),
+                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {})
+                ]);
+            }
+        }
+
+        // Eğer hala ana sayfada değilsek bir kez daha ana pangeye yönlendir
+        if (!page.url().includes('infomedia')) {
+            await page.goto('https://login.superservice.com/', { waitUntil: 'networkidle2' }).catch(() => {});
         }
 
         const htmlContent = await page.evaluate(() => {
