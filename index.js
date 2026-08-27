@@ -92,7 +92,7 @@ app.use('/', async (req, res, next) => {
                         responseBody = Buffer.concat([responseBody, chunk]);
                     };
 
-'                    proxyRes.end = function (chunk) {
+                    proxyRes.end = function (chunk) {
                         if (chunk) {
                             responseBody = Buffer.concat([responseBody, chunk]);
                         }
