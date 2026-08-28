@@ -12,7 +12,6 @@ let sessionCookies = [];
 let isReady = false;
 let loginInProgress = false;
 
-// 1. Arka Planda Gizlice Giriş Yapan Fonksiyon
 async function startAutomatedLogin() {
     if (loginInProgress || isReady) return;
     loginInProgress = true;
@@ -31,19 +30,22 @@ async function startAutomatedLogin() {
 
         const page = await browser.newPage();
         
-        // Giriş sayfasına git
-        await page.goto('https://login.superservice.com/login/tr/?goto=https:%2F%2Flogin.superservice.com%2F', { waitUntil: 'networkidle2' });
+        // Hızlıca login sayfasına git (networkidle0 yerine domcontentloaded kullanarak bekleme süresini azaltıyoruz)
+        await page.goto('https://login.superservice.com/login/tr/?goto=https:%2F%2Flogin.superservice.com%2F', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        // Senin verdiğin ID'ler ve bilgilerle formu doldur
-        await page.type('#username', 'manfordb2b@yandex.com', { delay: 50 });
-        await page.type('#passwordInput', '0326Aoyp.', { delay: 50 });
-        await page.click('#loginButton');
+        // Elementleri doğrudan DOM üzerinden manipüle et (En hızlı ve hatasız yöntem)
+        await page.waitForSelector('#username', { timeout: 30000 });
+        await page.evaluate(() => {
+            document.querySelector('#username').value = 'manfordb2b@yandex.com';
+            document.querySelector('#passwordInput').value = '0326Aoyp.';
+            document.querySelector('#loginButton').click();
+        });
 
-        // Yönlendirmeyi bekle ve doğrudan asıl katalog adresine git (Başlat butonuna basmakla zaman kaybetmeden)
-        await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
-        await page.goto('https://microcat-europe.superservice.com/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E', { waitUntil: 'networkidle2' });
+        // Tıklamadan sonra orijinal paneli geçip doğrudan Microcat'e bağlanmayı bekle
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => console.log("İlk yönlendirme beklendi (Timeout olabilir)"));
+        await page.goto('https://microcat-europe.superservice.com/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        // Tüm oturum çerezlerini (anahtarları) al
+        // Tüm oturum çerezlerini al
         sessionCookies = await page.cookies();
         isReady = true;
         console.log("Giriş başarılı, hedef sisteme bağlandı!");
@@ -57,19 +59,17 @@ async function startAutomatedLogin() {
     }
 }
 
-// 2. Favicon
 app.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, 'favicon.ico'));
 });
 
-// 3. Durum Kontrol Rotası (Ekranda GIF dönerken burayı kontrol edecek)
+// Durum Kontrol Rotası
 app.get('/api/status', (req, res) => {
-    res.json({ ready: isReady });
+    res.json({ ready: isReady, inProgress: loginInProgress });
 });
 
-// 4. Ana Sayfa (Loading Ekranı) ve Proxy Yönlendirici
+// Ana Sayfa (Loading Ekranı)
 app.use((req, res, next) => {
-    // Eğer oturum açılmadıysa Yükleniyor ekranını (GIF) göster
     if (!isReady && !req.path.startsWith('/api/')) {
         startAutomatedLogin();
         return res.send(`
@@ -83,29 +83,38 @@ app.use((req, res, next) => {
                     img { width: 100px; height: 100px; margin-bottom: 20px; }
                     h2 { color: #2c3e50; margin-bottom: 5px; }
                     p { color: #7f8c8d; }
+                    #status-text { margin-top: 15px; font-weight: bold; color: #e67e22; }
                 </style>
             </head>
             <body>
                 <img src="https://i.gifer.com/ZKZg.gif" alt="Yükleniyor" />
                 <h2>Sisteme Güvenli Giriş Yapılıyor...</h2>
-                <p>Lütfen bekleyin, katalog hazırlanıyor. Bu işlem birkaç saniye sürebilir.</p>
+                <p>Lütfen bekleyin, bu işlem yaklaşık 15-30 saniye sürebilir.</p>
+                <div id="status-text">Sunucu bağlanıyor...</div>
                 <script>
+                    let checkCount = 0;
                     const interval = setInterval(() => {
                         fetch('/api/status').then(r => r.json()).then(data => {
+                            checkCount++;
                             if (data.ready) {
                                 clearInterval(interval);
-                                // Hazır olunca URL'i değiştirmeden proxy'e yönlendir
-                                window.location.href = '/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E';
+                                document.getElementById('status-text').innerText = "Oturum açıldı, yönlendiriliyorsunuz...";
+                                document.getElementById('status-text').style.color = "#27ae60";
+                                setTimeout(() => {
+                                    window.location.href = '/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E';
+                                }, 1000);
+                            } else if (checkCount > 20) {
+                                document.getElementById('status-text').innerText = "Beklenenden uzun sürüyor, lütfen biraz daha bekleyin...";
+                                document.getElementById('status-text').style.color = "#c0392b";
                             }
-                        });
-                    }, 2000);
+                        }).catch(() => {});
+                    }, 3000);
                 </script>
             </body>
             </html>
         `);
     }
 
-    // İstek kök dizine geldiyse ve hazırsak direkt kataloğa fırlat (kendi sitemiz içinde)
     if (isReady && req.path === '/') {
         return res.redirect('/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E');
     }
@@ -113,35 +122,32 @@ app.use((req, res, next) => {
     next();
 });
 
-// 5. Kesin ve Kusursuz Proxy Katmanı
+// Proxy Katmanı
 app.use('/', createProxyMiddleware({
     target: 'https://microcat-europe.superservice.com',
     changeOrigin: true,
     secure: false,
-    autoRewrite: true, // Adres çubuğunu bizim domaninde tutar
+    autoRewrite: true, 
     hostRewrite: true, 
     onProxyReq: (proxyReq) => {
-        // Çerezleri enjekte et
         if (sessionCookies.length > 0) {
             const cookieStr = sessionCookies.map(c => `${c.name}=${c.value}`).join('; ');
             proxyReq.setHeader('cookie', cookieStr);
         }
     },
     onProxyRes: (proxyRes, req, res) => {
-        // Tarayıcının orijinal siteye kaçmasını önleyen bariyer
         if ([301, 302, 307, 308].includes(proxyRes.statusCode)) {
             const location = proxyRes.headers['location'];
             if (location && location.includes('login.superservice.com')) {
-                isReady = false; // Oturum düşmüş demektir, başa sar
+                isReady = false; 
                 proxyRes.headers['location'] = '/';
             }
         }
 
-        // HTML dosyasının arasına girip senin yasaklı CSS listeni gömeceğiz
         const isHtml = proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html');
 
         if (isHtml) {
-            delete proxyRes.headers['content-length']; // Boyut değişeceği için siliyoruz
+            delete proxyRes.headers['content-length'];
 
             const _write = res.write;
             const _end = res.end;
@@ -154,19 +160,17 @@ app.use('/', createProxyMiddleware({
                 let buffer = Buffer.concat(bodyChunks);
                 const encoding = proxyRes.headers['content-encoding'];
 
-                // Sıkıştırılmış veriyi açıyoruz (Bu yüzden hata veriyordu, çözdük!)
                 try {
                     if (encoding === 'gzip') buffer = zlib.gunzipSync(buffer);
                     else if (encoding === 'deflate') buffer = zlib.inflateSync(buffer);
                     else if (encoding === 'br') buffer = zlib.brotliDecompressSync(buffer);
-                    delete proxyRes.headers['content-encoding']; // Açtığımız için başlığı sil
+                    delete proxyRes.headers['content-encoding'];
                 } catch (e) {
                     console.error("Zlib açma hatası:", e);
                 }
 
                 let html = buffer.toString('utf8');
 
-                // İstediğin yasaklı elemanlar listesi (Tamamen gizler)
                 const customCSS = `
                     <style>
                         .footer.ng-star-inserted,
@@ -187,7 +191,6 @@ app.use('/', createProxyMiddleware({
                     </style>
                 `;
 
-                // Başlığı Ford Microcat yap ve CSS'i Head etiketine göm
                 html = html.replace(/<title>.*?<\/title>/i, '<title>Ford Microcat</title>');
                 if (html.includes('</head>')) {
                     html = html.replace('</head>', customCSS + '</head>');
