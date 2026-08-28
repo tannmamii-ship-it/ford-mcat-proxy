@@ -11,14 +11,25 @@ const PORT = process.env.PORT || 10000;
 let sessionCookies = [];
 let isReady = false;
 let loginInProgress = false;
+let systemLogs = [];
+
+// Canlı Log Sistemi
+function addLog(msg) {
+    const time = new Date().toLocaleTimeString('tr-TR');
+    const logMsg = `[${time}] ${msg}`;
+    systemLogs.push(logMsg);
+    console.log(logMsg);
+    if (systemLogs.length > 20) systemLogs.shift(); // Sadece son 20 işlemi tut
+}
 
 async function startAutomatedLogin() {
     if (loginInProgress || isReady) return;
     loginInProgress = true;
+    systemLogs = []; 
     let browser = null;
     
     try {
-        console.log("Arka planda Puppeteer başlatılıyor...");
+        addLog("Adım 1: Sanal tarayıcı (Puppeteer) başlatılıyor...");
         const executablePath = await chromium.executablePath();
         browser = await puppeteer.launch({
             args: chromium.args,
@@ -28,30 +39,35 @@ async function startAutomatedLogin() {
             ignoreHTTPSErrors: true,
         });
 
+        addLog("Adım 2: Ford giriş sayfasına bağlanılıyor...");
         const page = await browser.newPage();
         
-        // Hızlıca login sayfasına git (networkidle0 yerine domcontentloaded kullanarak bekleme süresini azaltıyoruz)
         await page.goto('https://login.superservice.com/login/tr/?goto=https:%2F%2Flogin.superservice.com%2F', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        addLog("Adım 3: Sayfa yüklendi. Form aranıyor...");
 
-        // Elementleri doğrudan DOM üzerinden manipüle et (En hızlı ve hatasız yöntem)
         await page.waitForSelector('#username', { timeout: 30000 });
+        addLog("Adım 4: Form bulundu, bilgiler giriliyor...");
+        
         await page.evaluate(() => {
             document.querySelector('#username').value = 'manfordb2b@yandex.com';
             document.querySelector('#passwordInput').value = '0326Aoyp.';
             document.querySelector('#loginButton').click();
         });
+        addLog("Adım 5: Giriş yap butonuna tıklandı.");
 
-        // Tıklamadan sonra orijinal paneli geçip doğrudan Microcat'e bağlanmayı bekle
-        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => console.log("İlk yönlendirme beklendi (Timeout olabilir)"));
+        addLog("Adım 6: Sistemin yönlendirmesi bekleniyor...");
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => addLog("Uyarı: İlk yönlendirme geç cevap verdi, zorla devam ediliyor."));
+        
+        addLog("Adım 7: Doğrudan Microcat kataloğuna geçiş yapılıyor...");
         await page.goto('https://microcat-europe.superservice.com/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        // Tüm oturum çerezlerini al
+        addLog("Adım 8: Oturum anahtarları kopyalanıyor...");
         sessionCookies = await page.cookies();
         isReady = true;
-        console.log("Giriş başarılı, hedef sisteme bağlandı!");
+        addLog("BAŞARILI! Hedef sisteme bağlandı. Ekrana aktarılıyor...");
         
     } catch (error) {
-        console.error("Otomasyon hatası:", error);
+        addLog("HATA OLUŞTU: " + error.message);
         isReady = false;
     } finally {
         loginInProgress = false;
@@ -63,12 +79,12 @@ app.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, 'favicon.ico'));
 });
 
-// Durum Kontrol Rotası
+// Arayüzün saniye saniye bilgi çektiği API
 app.get('/api/status', (req, res) => {
-    res.json({ ready: isReady, inProgress: loginInProgress });
+    res.json({ ready: isReady, logs: systemLogs });
 });
 
-// Ana Sayfa (Loading Ekranı)
+// Yükleme Ekranı (Siyah Terminal Tasarımı)
 app.use((req, res, next) => {
     if (!isReady && !req.path.startsWith('/api/')) {
         startAutomatedLogin();
@@ -79,36 +95,37 @@ app.use((req, res, next) => {
                 <meta charset="UTF-8">
                 <title>Ford Microcat Başlatılıyor...</title>
                 <style>
-                    body { margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background-color: #f4f6f9; font-family: Arial, sans-serif; }
-                    img { width: 100px; height: 100px; margin-bottom: 20px; }
-                    h2 { color: #2c3e50; margin-bottom: 5px; }
-                    p { color: #7f8c8d; }
-                    #status-text { margin-top: 15px; font-weight: bold; color: #e67e22; }
+                    body { background-color: #121212; color: #00ff00; font-family: 'Courier New', Courier, monospace; padding: 30px; margin: 0; }
+                    h2 { color: #ffffff; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 0; }
+                    #log-container { background-color: #000; padding: 15px; border-radius: 5px; height: 350px; overflow-y: auto; font-size: 15px; margin-bottom: 20px; border: 1px solid #333; }
+                    .log-line { margin: 8px 0; }
                 </style>
             </head>
             <body>
-                <img src="https://i.gifer.com/ZKZg.gif" alt="Yükleniyor" />
-                <h2>Sisteme Güvenli Giriş Yapılıyor...</h2>
-                <p>Lütfen bekleyin, bu işlem yaklaşık 15-30 saniye sürebilir.</p>
-                <div id="status-text">Sunucu bağlanıyor...</div>
+                <h2>🚀 Ford Microcat Sistemine Bağlanılıyor...</h2>
+                <div id="log-container">Bağlantı kuruluyor... Lütfen bekleyin.</div>
                 <script>
-                    let checkCount = 0;
+                    const logContainer = document.getElementById('log-container');
+                    
                     const interval = setInterval(() => {
-                        fetch('/api/status').then(r => r.json()).then(data => {
-                            checkCount++;
-                            if (data.ready) {
-                                clearInterval(interval);
-                                document.getElementById('status-text').innerText = "Oturum açıldı, yönlendiriliyorsunuz...";
-                                document.getElementById('status-text').style.color = "#27ae60";
-                                setTimeout(() => {
-                                    window.location.href = '/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E';
-                                }, 1000);
-                            } else if (checkCount > 20) {
-                                document.getElementById('status-text').innerText = "Beklenenden uzun sürüyor, lütfen biraz daha bekleyin...";
-                                document.getElementById('status-text').style.color = "#c0392b";
-                            }
-                        }).catch(() => {});
-                    }, 3000);
+                        fetch('/api/status')
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.logs && data.logs.length > 0) {
+                                    logContainer.innerHTML = data.logs.map(log => '<div class="log-line">' + log + '</div>').join('');
+                                    logContainer.scrollTop = logContainer.scrollHeight;
+                                }
+                                
+                                if (data.ready) {
+                                    clearInterval(interval);
+                                    logContainer.innerHTML += '<div class="log-line" style="color: yellow;">[BAŞARILI] YÖNLENDİRİLİYORSUNUZ...</div>';
+                                    setTimeout(() => {
+                                        window.location.href = '/content/microcat-epc/#/home/?appName=Microcat_EPC&subscription=DYN000000000B2F847&subscriptionAssignment=DYN0000000015ACE6E';
+                                    }, 1500);
+                                }
+                            })
+                            .catch(e => console.error("Durum kontrol hatası", e));
+                    }, 1500);
                 </script>
             </body>
             </html>
@@ -166,7 +183,7 @@ app.use('/', createProxyMiddleware({
                     else if (encoding === 'br') buffer = zlib.brotliDecompressSync(buffer);
                     delete proxyRes.headers['content-encoding'];
                 } catch (e) {
-                    console.error("Zlib açma hatası:", e);
+                    console.error("Zlib hatası:", e);
                 }
 
                 let html = buffer.toString('utf8');
@@ -208,5 +225,5 @@ app.use('/', createProxyMiddleware({
 }));
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Ford Proxy sunucusu ${PORT} portunda başarıyla başlatıldı.`);
+    console.log(`Ford Proxy sunucusu ${PORT} portunda çalışıyor.`);
 });
